@@ -227,16 +227,19 @@ class LISP_MapRegister(Packet):
     name = "LISP Map-Register packet"
     fields_desc = [ 
         BitField("ptype", 0, 4),
-        FlagsField("register_flags", None, 1, ["proxy_map_reply"]),
-        BitField("p3", 0, 18), 
-        FlagsField("register_flags", None, 1, ["want-map-notify"]),
+        FlagsField("register_flags", None, 4, ["proxy_map_reply", "lisp_sec", "itr_id_present", "rtr"]),
+        BitField("p3", 0, 15),
+        FlagsField("additional_register_flags", None, 1, ["want-map-notify"]),
         FieldLenField("register_count", None, "register_records", "B", count_of="register_records", adjust=lambda pkt,x:x/16 - 1),
         XLongField("nonce", random.randint(nonce_min, nonce_max)),
 	ShortField("key_id", 0),
         ShortField("authentication_length", 0),
             # authentication length expresses itself in bytes, so no modifications needed here
         StrLenField("authentication_data", None, length_from = lambda pkt: pkt.authentication_length),
-        PacketListField("register_records", None, LISP_MapRecord, count_from=lambda pkt:pkt.register_count + 1)
+        PacketListField("register_records", None, LISP_MapRecord, count_from=lambda pkt:pkt.register_count + 1),
+        ConditionalField(XLongField("xtr_id_high", 0), lambda pkt:pkt.register_flags & 2 == 2),
+        ConditionalField(XLongField("xtr_id_low", 0), lambda pkt:pkt.register_flags & 2 == 2),
+        ConditionalField(XLongField("site_id", 0), lambda pkt:pkt.register_flags & 2 == 2)
     ]
 
 class LISP_MapNotify(Packet):
