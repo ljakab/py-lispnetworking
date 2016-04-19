@@ -13,7 +13,7 @@
     archive for more details.
 """
 
-import socket,struct,random,netifaces,sys
+import socket,struct,random,netifaces,sys,hmac,hashlib
 from string import ascii_letters
 from scapy import *
 from scapy.all import *
@@ -225,6 +225,7 @@ class LISP_MapReply(Packet):
 class LISP_MapRegister(Packet):
     """ map reply part used after the first 16 bits have been read by the LISP_Type class"""
     name = "LISP Map-Register packet"
+    authentication_key = "password" # the key to use in the HMAC SHA computation
     fields_desc = [ 
         BitField("ptype", 0, 4),
         FlagsField("register_flags", None, 4, ["proxy_map_reply", "lisp_sec", "itr_id_present", "rtr"]),
@@ -241,6 +242,22 @@ class LISP_MapRegister(Packet):
         ConditionalField(XLongField("xtr_id_low", 0), lambda pkt:pkt.register_flags & 2 == 2),
         ConditionalField(XLongField("site_id", 0), lambda pkt:pkt.register_flags & 2 == 2)
     ]
+
+    def post_build(self, p, pay):
+        if self.key_id == 0:
+            # no HMAC
+            return p
+        # add authentication field with the correct length and bytes set to zero
+        self.authentication_data = '\x00' * self.authentication_length
+        p = p[:16] + self.authentication_data + p[16:]
+        if self.key_id == 1:
+            # compute HMAC-SHA1 checksum
+            self.authentication_data = hmac.new(self.authentication_key, msg=str(p), digestmod=hashlib.sha1).digest()
+        elif self.key_id == 2:
+            # compute HMAC-SHA256
+            self.authentication_data = hmac.new(self.authentication_key, msg=str(p), digestmod=hashlib.sha256).digest()
+        p = p[:16] + self.authentication_data + p[(16+self.authentication_length):]
+        return p
 
 class LISP_MapNotify(Packet):
     """ map notify part used after the first 16 bits have been read by the LISP_Type class"""
