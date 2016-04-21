@@ -46,6 +46,12 @@ _AFI = {
     "lcaf" : 16387 
 }
 
+_KEY_LENGTH = {
+    0 : 0,
+    1 : 20,
+    2 : 32
+}
+
 """ nonce_max determines the maximum value of a nonce field. The default is set to 18446744073709551615, since this is the maximum possible value (>>> int('f'*16, 16)). TODO - see about the entropy for this source"""
 nonce_max = 16777215000
 nonce_min = 15000000000
@@ -244,19 +250,20 @@ class LISP_MapRegister(Packet):
     ]
 
     def post_build(self, p, pay):
+        key_length = _KEY_LENGTH[self.key_id]
         if self.key_id == 0:
             # no HMAC
             return p
         # add authentication field with the correct length and bytes set to zero
-        self.authentication_data = '\x00' * self.authentication_length
-        p = p[:16] + self.authentication_data + p[16:]
+        self.authentication_data = '\x00' * key_length
+        p = p[:14] + struct.pack("!H", key_length) + self.authentication_data + p[16:]
         if self.key_id == 1:
             # compute HMAC-SHA1 checksum
             self.authentication_data = hmac.new(self.authentication_key, msg=str(p), digestmod=hashlib.sha1).digest()
         elif self.key_id == 2:
             # compute HMAC-SHA256
             self.authentication_data = hmac.new(self.authentication_key, msg=str(p), digestmod=hashlib.sha256).digest()
-        p = p[:16] + self.authentication_data + p[(16+self.authentication_length):]
+        p = p[:16] + self.authentication_data + p[(16+key_length):]
         return p
 
 class LISP_MapNotify(Packet):
