@@ -105,6 +105,7 @@ LISPAddressField, Dealing with addresses in LISP context, the packets often cont
 """
 
 class LISP_AddressField(Field):
+    __slots__ = ["fld_name", "_ip_field", "_ip6_field"]
     def __init__(self, fld_name, ip_fld_name):
         Field.__init__(self, ip_fld_name, '0')
 
