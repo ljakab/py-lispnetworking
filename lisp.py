@@ -283,6 +283,17 @@ class LISP_MapNotify(Packet):
         PacketListField("notify_records", None, LISP_MapRecord, count_from=lambda pkt: pkt.notify_count)
     ]
 
+
+class LISP_GPE_Header(Packet):
+    name = "LISP GPE Header"
+    fields_desc = [
+        FlagsField("gpe_flags", None, 6, ["N", "L", "E", "V", "I", "P"]),
+        BitField("reserved", 0, 18),
+        ByteField("next_proto", 0),
+        IntField("iid", 0),
+    ]
+
+
 class LISP_Encapsulated_Control_Message(Packet):
     name = "LISP Encapsulated Control Message packet"
     fields_desc = [
@@ -302,6 +313,11 @@ class LISP_Encapsulated_Control_Message(Packet):
     # tie LISP into the IP/UDP stack
 bind_layers( UDP, LISP, dport=4342 )
 bind_layers( UDP, LISP, sport=4342 )
+bind_layers( UDP, LISP_GPE_Header, dport=4341 )
+bind_layers( UDP, LISP_GPE_Header, sport=4341 )
+bind_layers( LISP_GPE_Header, IP, next_proto=1 )
+bind_layers( LISP_GPE_Header, IPv6, next_proto=2 )
+bind_layers( LISP_GPE_Header, Ether, next_proto=3 )
 bind_layers( LISP_Encapsulated_Control_Message, LCAF_Type, )
 
 """ start scapy shell """
