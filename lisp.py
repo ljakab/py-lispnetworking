@@ -13,7 +13,7 @@
     archive for more details.
 """
 
-import socket,struct,random,netifaces,sys
+import socket,struct,random,netifaces,sys,hmac,hashlib
 from string import ascii_letters
 from scapy import *
 from scapy.all import *
@@ -44,6 +44,12 @@ _AFI = {
     "ipv4" : 1,
     "ipv6" : 2,
     "lcaf" : 16387 
+}
+
+_KEY_LENGTH = {
+    0 : 0,
+    1 : 20,
+    2 : 32
 }
 
 """ nonce_max determines the maximum value of a nonce field. The default is set to 18446744073709551615, since this is the maximum possible value (>>> int('f'*16, 16)). TODO - see about the entropy for this source"""
@@ -99,6 +105,7 @@ LISPAddressField, Dealing with addresses in LISP context, the packets often cont
 """
 
 class LISP_AddressField(Field):
+    __slots__ = ["fld_name", "_ip_field", "_ip6_field"]
     def __init__(self, fld_name, ip_fld_name):
         Field.__init__(self, ip_fld_name, '0')
 
@@ -225,19 +232,40 @@ class LISP_MapReply(Packet):
 class LISP_MapRegister(Packet):
     """ map reply part used after the first 16 bits have been read by the LISP_Type class"""
     name = "LISP Map-Register packet"
+    authentication_key = "password" # the key to use in the HMAC SHA computation
     fields_desc = [ 
         BitField("ptype", 0, 4),
-        FlagsField("register_flags", None, 1, ["proxy_map_reply"]),
-        BitField("p3", 0, 18), 
-        FlagsField("register_flags", None, 1, ["want-map-notify"]),
+        FlagsField("register_flags", None, 4, ["proxy_map_reply", "lisp_sec", "itr_id_present", "rtr"]),
+        BitField("p3", 0, 15),
+        FlagsField("additional_register_flags", None, 1, ["want-map-notify"]),
         FieldLenField("register_count", None, "register_records", "B", count_of="register_records", adjust=lambda pkt,x:x/16 - 1),
         XLongField("nonce", random.randint(nonce_min, nonce_max)),
 	ShortField("key_id", 0),
         ShortField("authentication_length", 0),
             # authentication length expresses itself in bytes, so no modifications needed here
         StrLenField("authentication_data", None, length_from = lambda pkt: pkt.authentication_length),
-        PacketListField("register_records", None, LISP_MapRecord, count_from=lambda pkt:pkt.register_count + 1)
+        PacketListField("register_records", None, LISP_MapRecord, count_from=lambda pkt:pkt.register_count + 1),
+        ConditionalField(XLongField("xtr_id_high", 0), lambda pkt:pkt.register_flags & 2 == 2),
+        ConditionalField(XLongField("xtr_id_low", 0), lambda pkt:pkt.register_flags & 2 == 2),
+        ConditionalField(XLongField("site_id", 0), lambda pkt:pkt.register_flags & 2 == 2)
     ]
+
+    def post_build(self, p, pay):
+        key_length = _KEY_LENGTH[self.key_id]
+        if self.key_id == 0:
+            # no HMAC
+            return p
+        # add authentication field with the correct length and bytes set to zero
+        self.authentication_data = '\x00' * key_length
+        p = p[:14] + struct.pack("!H", key_length) + self.authentication_data + p[16:]
+        if self.key_id == 1:
+            # compute HMAC-SHA1 checksum
+            self.authentication_data = hmac.new(self.authentication_key, msg=str(p), digestmod=hashlib.sha1).digest()
+        elif self.key_id == 2:
+            # compute HMAC-SHA256
+            self.authentication_data = hmac.new(self.authentication_key, msg=str(p), digestmod=hashlib.sha256).digest()
+        p = p[:16] + self.authentication_data + p[(16+key_length):]
+        return p
 
 class LISP_MapNotify(Packet):
     """ map notify part used after the first 16 bits have been read by the LISP_Type class"""
@@ -254,6 +282,17 @@ class LISP_MapNotify(Packet):
         StrLenField("authentication_data", None, length_from = lambda pkt: pkt.authentication_length),
         PacketListField("notify_records", None, LISP_MapRecord, count_from=lambda pkt: pkt.notify_count)
     ]
+
+
+class LISP_GPE_Header(Packet):
+    name = "LISP GPE Header"
+    fields_desc = [
+        FlagsField("gpe_flags", None, 6, ["N", "L", "E", "V", "I", "P"]),
+        BitField("reserved", 0, 18),
+        ByteField("next_proto", 0),
+        IntField("iid", 0),
+    ]
+
 
 class LISP_Encapsulated_Control_Message(Packet):
     name = "LISP Encapsulated Control Message packet"
@@ -274,6 +313,11 @@ class LISP_Encapsulated_Control_Message(Packet):
     # tie LISP into the IP/UDP stack
 bind_layers( UDP, LISP, dport=4342 )
 bind_layers( UDP, LISP, sport=4342 )
+bind_layers( UDP, LISP_GPE_Header, dport=4341 )
+bind_layers( UDP, LISP_GPE_Header, sport=4341 )
+bind_layers( LISP_GPE_Header, IP, next_proto=1 )
+bind_layers( LISP_GPE_Header, IPv6, next_proto=2 )
+bind_layers( LISP_GPE_Header, Ether, next_proto=3 )
 bind_layers( LISP_Encapsulated_Control_Message, LCAF_Type, )
 
 """ start scapy shell """
