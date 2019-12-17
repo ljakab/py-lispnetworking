@@ -236,8 +236,8 @@ class LISP_MapRegister(Packet):
     fields_desc = [ 
         BitField("ptype", 0, 4),
         FlagsField("register_flags", None, 4, ["proxy_map_reply", "lisp_sec", "itr_id_present", "rtr"]),
-        BitField("p3", 0, 15),
-        FlagsField("additional_register_flags", None, 1, ["want-map-notify"]),
+        BitField("p3", 0, 13),
+        FlagsField("additional_register_flags", None, 3, ["merge", "something", "want-map-notify"]),
         FieldLenField("register_count", None, "register_records", "B", count_of="register_records", adjust=lambda pkt,x:x/16 - 1),
         XLongField("nonce", random.randint(nonce_min, nonce_max)),
 	ShortField("key_id", 0),
